@@ -1,8 +1,14 @@
 # hash-bench
 
-Strategy-C ("hybrid") benchmark for choosing a hash function — SHA-256,
-SHA3-256, BLAKE3, Poseidon (v1) — by **expected cost over a probability-weighted
-use-case set**, both natively and inside the Flock proving system.
+Hybrid ("Strategy C") benchmark for choosing a hash function — SHA-256,
+SHA3-256, BLAKE3, Poseidon (v1) — by **expected cost over a
+probability-weighted use-case set**, measured in two dimensions: native
+execution and proving cost inside a SNARK/STARK prover. The prover backend
+is a parameter: any system whose circuits are largely repetitive (fixed
+rows per permutation, trace padded to a power of two) fits the model —
+examples include Flock and the FRI-STARK zkVMs submitted to
+[ethereum/soundcalc](https://github.com/ethereum/soundcalc) (OpenVM ships
+as a worked example in `provers/openvm.toml`).
 
 ## Model
 
@@ -15,9 +21,9 @@ Instead of end-to-end benchmarking every (hash, use case) pair, we measure
   `time_ns(msg) = c0 + c1 · perms(msg)` (c0 = per-call overhead, c1 =
   cost per permutation), least-squares fitted from real implementations
   at several message lengths.
-- **Circuit atoms** — trace rows per permutation, plus a Flock prover model
-  `prove_ns = setup_ns + ns_per_row · padded_height`. Because Flock circuits
-  are largely repetitive, a use case's trace height is
+- **Circuit atoms** — trace rows per permutation, plus a two-constant prover
+  model `prove_ns = setup_ns + ns_per_row · padded_height`. For a
+  repetitive circuit, a use case's trace height is
   `num_calls · perms · rows_per_perm`, padded to the next power of two —
   which is why **`num_calls` is a first-class use-case parameter**
   (typical values: 1, 8, 64, 1024, 2^15). Per-call prover cost falls in
@@ -44,7 +50,7 @@ cargo run --release -- zkvm        # soundcalc-derived zkVM benchmark (provers/o
 Flags: `--workload workloads/default.toml`, `--calibration calibration.json`,
 `--out results.json`, `--zkvm provers/openvm.toml`.
 
-## zkVM mode (prover backend as a parameter)
+## zkVM mode
 
 `provers/openvm.toml` encodes the OpenVM v1.5.0 parameters submitted to
 [ethereum/soundcalc](https://github.com/ethereum/soundcalc) and the model in
@@ -58,7 +64,8 @@ verifier's hashing — t query openings with expected Merkle multi-proof
 deduplication (the eMP formula) plus transcript absorption — must be
 *proven*, and is mapped to trace rows via rows/perm. Prover per-row speed
 is sampled deterministically (seeded) from a configured range to produce
-concrete illustrative times. Other provers = other TOML files.
+concrete illustrative times. To benchmark a different zkVM, write another
+TOML with its soundcalc parameters and pass `--zkvm`.
 
 ## Workflow / what is real vs. placeholder
 
@@ -67,25 +74,26 @@ concrete illustrative times. Other provers = other TOML files.
    (`native` / `circuit` / `both`).
 2. **Run `measure`** on each target hardware profile (with/without SHA-NI
    makes a large difference for SHA-256) — this makes the native side real.
-3. **Calibrate the circuit side against Flock**: the `circuit_rows_per_perm`
-   values and the Flock prover constants (`setup_ns`, `ns_per_row`,
-   `min_height`) in `calibration.json` are placeholders with literature-prior
-   ratios. Replace them with numbers from real Flock traces (a few end-to-end
-   runs suffice to fit two constants), then set `"measured": true`.
+3. **Calibrate the circuit side against your prover**: the
+   `circuit_rows_per_perm` values and the prover constants (`setup_ns`,
+   `ns_per_row`, `min_height`) in `calibration.json` are placeholders with
+   literature-prior ratios. Replace them with numbers from real traces of
+   your target prover (a few end-to-end runs suffice to fit two constants),
+   then set `"measured": true` and name the backend in `prover.name`.
 4. **Read the sensitivity section** of the report: it perturbs every use-case
    probability ×0.5/×2 and reports whether the winner flips — if it does, the
    benchmark's real output is which probability you must pin down.
 
 ## TODO
 
-- [ ] Poseidon (v1) native backend (blocked on Flock's field choice; then wire
-      e.g. the `zkhash` crate or a hand-rolled permutation and delete the
-      placeholder atom).
-- [ ] Poseidon `bytes_per_elem`/rate in `[poseidon]` must match Flock's
-      field and chosen instance (width, rate, R_F/R_P round numbers).
-- [ ] Flock adapter: extract rows/perm and (setup, per-row) prover constants
-      from real traces; validate the analytic model within ~10% on 2–3
-      end-to-end runs.
+- [ ] Poseidon (v1) native backend (blocked on the target prover's field
+      choice; then wire e.g. the `zkhash` crate or a hand-rolled permutation
+      and delete the placeholder atom).
+- [ ] Poseidon `bytes_per_elem`/rate in `[poseidon]` must match the target
+      prover's field and chosen instance (width, rate, R_F/R_P round numbers).
+- [ ] Prover adapters: extract rows/perm and (setup, per-row) constants from
+      real traces of each backend of interest; validate the analytic model
+      within ~10% on 2–3 end-to-end runs.
 - [ ] Optional second hardware profile (ARM / no-SHA-NI x86 / WASM).
 - [ ] BLAKE3's linear (c0, c1) fit is poor: SIMD batching makes long-message
       per-permutation cost ~5x cheaper than single-block calls, so the fit
