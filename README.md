@@ -79,6 +79,75 @@ configured arity until a single root). Prover speed comes from
 zkVM, add a sibling workload TOML with its soundcalc parameters and pass
 it via `--workload`.
 
+## Filling calibration.json
+
+`calibration.json` is the one JSON the report **reads** (all atom costs live
+there); `results.json` is **written** by the report. If `calibration.json`
+is absent or unparseable, built-in placeholders are used and the report
+prints a warning. Start from the tracked example:
+
+```bash
+cp calibration.example.json calibration.json
+```
+
+All times are **nanoseconds**. All four hash keys — exactly `"sha256"`,
+`"sha3-256"`, `"blake3"`, `"poseidon"` — are **required** in both `native`
+and `circuit_rows_per_perm` (a missing key aborts the report).
+
+### `native` — per-hash native cost model
+
+`time_ns(msg) = c0_ns + c1_ns · perms(msg)`, where `perms(msg)` is the
+call-count model in `src/callcount.rs`.
+
+| field | meaning | how to obtain |
+|---|---|---|
+| `c0_ns` | fixed per-call overhead (setup, padding, finalization) | `cargo run --release -- measure` fits it (least squares over 5 message lengths) |
+| `c1_ns` | marginal cost of one permutation / compression call | same `measure` run |
+| `measured` | `true` once fitted on the target machine; `false` = placeholder (report warns) | set by `measure` automatically |
+
+`measure` fills SHA-256, SHA3-256, BLAKE3. Poseidon has no backend yet, so
+fill it by hand: time `N` calls of your implementation at two message
+lengths `L1` (1 permutation) and `L2` (k permutations), then
+`c1 = (t(L2) − t(L1)) / (k − 1)` and `c0 = t(L1) − c1`. Re-run `measure`
+on every hardware profile you care about — SHA-NI vs. no SHA-NI changes
+SHA-256 by an order of magnitude.
+
+### `circuit_rows_per_perm` — per-hash in-circuit footprint
+
+Integer: how many trace rows one permutation of that hash occupies in your
+prover's arithmetization. Obtain from the AIR definition (a wide
+one-row-per-permutation Poseidon AIR is 1–2; bitwise hashes are 10²–10³),
+or empirically: build a test circuit with `n` permutations and divide its
+trace height by `n`. The shipped values are literature-prior *ratios*, not
+measurements — replace them.
+
+### `prover` — the prover backend (a parameter, key `"flock"` also accepted)
+
+`prove_ns = setup_ns + ns_per_row · padded_height`, where `padded_height`
+is the use case's hash rows rounded up to a power of two, floored at
+`min_height`.
+
+| field | meaning | how to obtain |
+|---|---|---|
+| `name` | backend label shown in warnings (`"flock"`, `"openvm"`, ...) | free text |
+| `setup_ns` | fixed per-proof overhead (commit setup, transcript init) | intercept of a linear fit (below) |
+| `ns_per_row` | marginal proving cost per padded trace row | slope of the same fit |
+| `min_height` | smallest trace height the prover pads to (power of two) | from the prover's config |
+| `measured` | `true` once fitted against real runs | set by hand |
+
+Fit procedure: run 2–3 end-to-end proofs at well-separated trace heights
+(e.g. 2^12, 2^16, 2^20), record wall time, linear-fit time against padded
+height. Validate on a held-out height: the model should land within ~10%,
+otherwise the linear-in-rows assumption is off for your prover (FFT
+n·log n terms, column count) and needs a refinement.
+
+### `results.json` (output, for downstream tooling)
+
+Written by `report`: the normalized workload (`workload.usecases`), the
+calibration used (`calibration`), every (use case × hash) cost row
+(`per_usecase`: perms, native_ns, trace rows, padded height, prove_ns),
+and the final ranking (`scores`: expected native / prove / combined ns).
+
 ## Workflow / what is real vs. placeholder
 
 1. **Edit `workloads/default.toml`** — the current use cases are placeholders;

@@ -1,0 +1,21 @@
+{
+  "native": {
+    "sha256":   { "c0_ns": 120.0, "c1_ns": 78.0,   "measured": true },
+    "sha3-256": { "c0_ns": 26.0,  "c1_ns": 368.0,  "measured": true },
+    "blake3":   { "c0_ns": 335.0, "c1_ns": 17.0,   "measured": true },
+    "poseidon": { "c0_ns": 30.0,  "c1_ns": 2000.0, "measured": false }
+  },
+  "circuit_rows_per_perm": {
+    "sha256": 128,
+    "sha3-256": 256,
+    "blake3": 64,
+    "poseidon": 2
+  },
+  "prover": {
+    "name": "flock",
+    "setup_ns": 5000000.0,
+    "ns_per_row": 500.0,
+    "min_height": 1024,
+    "measured": false
+  }
+}
