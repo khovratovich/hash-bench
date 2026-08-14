@@ -1,0 +1,6 @@
+# Build artifacts
+/target/
+
+# Generated, machine-specific outputs (recreate with `cargo run --release -- measure` / `-- report`)
+calibration.json
+results.json

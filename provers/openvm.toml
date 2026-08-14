@@ -1,0 +1,123 @@
+# OpenVM v1.5.0 prover spec, derived from the soundcalc submission:
+#   https://github.com/ethereum/soundcalc/blob/main/soundcalc/zkvms/openvm/openvm.toml
+# Hashing-count model follows soundcalc's math companion (fri.tex: "FRI proof
+# size") and pcs/fri.py:get_FRI_proof_size_bits():
+#   - one Merkle tree over the LDE domain D = trace_length / rho for the
+#     initial (batched) commitment, leaf i = all committed values at index i
+#   - one Merkle tree per FRI fold round over D / prod(factors) leaves,
+#     siblings grouped into one leaf
+#   - verifier hashing per proof = t query openings with expected multi-proof
+#     deduplication (eMP formula), plus transcript absorption
+#
+# ===========================================================================
+# CAVEATS -- inherent to reading a *soundness* submission as a *layout*.
+# soundcalc's numbers are chosen conservative in the direction security
+# analysis wants (overstate batching count B -> understate security). Reused
+# as a cost description, that conservatism flips sign and OVERSTATES hashing.
+# The FRI shape parameters (D, fold rounds, num_queries, grinding) transfer
+# cleanly; `batch_size` is the one parameter where the two readings diverge.
+#
+# 1. `batch_size` counts batching TERMS, not committed width. It is the max,
+#    over trace heights, of base-field polynomial openings algebraically
+#    batched at that height (base col at 2 points -> 2; BabyBear^4 ext col at
+#    2 points -> 8; quotient chunks opened at 1 point), statistically sampled.
+#    We derive cols_per_leaf = batch_size / opening_points = 40000, which
+#    corrects the x2 opening multiplicity but keeps the rest.
+#
+# 2. Double maximum. We charge the worst-height COUNT (40000) at the worst
+#    DOMAIN (2^24 leaves). In real OpenVM, matrices have many different
+#    heights; the wide heights and tall heights need not coincide, and most
+#    committed cells live at far smaller heights (a 2^16-leaf tree costs 256x
+#    less hashing than a 2^24 one).
+#
+# 3. One tree vs many. The union-bound aggregate spans main traces of all
+#    AIRs, after-challenge (logup) extension columns, and quotient chunks,
+#    which physically live in SEPARATE commitment trees with much narrower
+#    leaves (stark-backend: cached/main/after-challenge/quotient).
+#
+# 4. Magnitude of the error. Commitment hashing really scales with total
+#    committed cells: a realistic app segment is ~10^9 cells -> with blowup 2
+#    and 4 B/elem roughly 10-20 GB hashed per app proof. This model computes
+#    40000 x 4 B x 2^24 ~ 2.7 TB, i.e. ~100-200x too much native hashing.
+#    Proven verifier hashing (t x initial leaf) is inflated ~10-40x -- the
+#    real verifier opens one row per matrix per query at the actual total
+#    width -- partially offset by the ~n_matrices Merkle paths per query that
+#    the single-tree model UNDERcounts. Utilization %% is indicative only.
+#
+# 5. What survives. Leaf hashing dominates both populations and scales every
+#    candidate hash by the same width factor, so the hash RANKING and the
+#    Poseidon-vs-byte-hash utilization gap are robust to this caveat; the
+#    ABSOLUTE running times are not.
+#
+# Fix path: per-circuit override with real committed dimensions, e.g.
+#   committed_matrices = [{ log_height = 23, width = 300 }, ...]
+# extracted from an instrumented OpenVM run (see the PR #74 procedure cited
+# above), falling back to the batch_size derivation when absent.
+# ===========================================================================
+
+[zkvm]
+name = "OpenVM"
+version = "1.5.0"
+# BabyBear (31-bit) base field; quartic extension for FRI folding.
+base_elem_bytes = 4    # serialized base-field element
+ext_elem_bytes = 16    # BabyBear^4 element
+digest_bytes = 32      # hash_size_bits = 256
+
+# Aggregation topology: https://docs.openvm.dev/specs/architecture/continuations
+# App segments -> leaf circuits -> internal tree until one root proof.
+# Arities are SDK configuration, not part of the soundcalc submission;
+# defaults below are assumptions -- adjust to the deployed config.
+[aggregation]
+num_app_segments = 16
+leaf_arity = 1         # app proofs verified per leaf proof
+internal_arity = 3     # child proofs verified per internal proof
+
+# Random sampling of prover speed constants ("concrete running times sampled
+# from a reasonable parameter set"): per-row proving cost and per-byte native
+# hashing live in these ranges; we draw `samples` deterministic samples.
+[sampling]
+seed = 42
+samples = 5
+ns_per_row_range = [200.0, 1000.0]   # amortized proving cost per trace row
+
+# ---------------------------------------------------------------------------
+# Circuits: values copied verbatim from the soundcalc submission.
+# ---------------------------------------------------------------------------
+
+[[circuits]]
+name = "app"
+log_trace = 23          # trace_length = 2^23
+log_inv_rate = 1        # rho = 0.5 -> D = 2^24
+fri_fold_rounds = 23    # folding factors: 23 x 2, early stop degree 2
+num_queries = 193
+batch_size = 80000
+opening_points = 2
+grind_batch = 20
+grind_query = 20
+grind_deep = 5
+
+[[circuits]]
+name = "leaf"
+log_trace = 23
+log_inv_rate = 1
+fri_fold_rounds = 23
+num_queries = 193
+batch_size = 80000
+opening_points = 2
+grind_batch = 20
+grind_query = 20
+grind_deep = 5
+verifies = "app"        # each leaf proof verifies `leaf_arity` app proofs
+
+[[circuits]]
+name = "internal"
+log_trace = 21
+log_inv_rate = 2        # rho = 0.25 -> D = 2^23
+fri_fold_rounds = 21    # early stop degree 4
+num_queries = 118
+batch_size = 4000
+opening_points = 2
+grind_batch = 16
+grind_query = 20
+grind_deep = 5
+verifies = "leaf"       # first internal level; higher levels verify "internal"

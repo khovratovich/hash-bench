@@ -1,0 +1,76 @@
+# Workload specification: THE input to the whole benchmark.
+# Edit probabilities / lengths / call counts here; everything downstream regenerates.
+
+# ------------------------------------------------------------------
+# Global model parameters
+# ------------------------------------------------------------------
+[model]
+# Everything is measured in time, so the combined score is simply
+#   E[native] + E[prove]  (seconds),
+# i.e. one occurrence of a use case pays its native cost (witness
+# generation hashes natively anyway) and its proving cost once.
+# If some hashing runs natively far MORE often than it is proven,
+# encode that as a separate usecase with role = "native" and its own
+# probability -- frequency asymmetries live in the workload, not in a
+# global knob.
+
+# num_calls sweep for the repetition table (Flock circuits are largely
+# repetitive, so per-call prover cost depends strongly on this).
+sweep_num_calls = [1, 8, 64, 1024, 32768]
+
+# ------------------------------------------------------------------
+# Poseidon (v1) sponge parameterization (depends on Flock's field!)
+# Defaults assume a 31/32-bit small field (BabyBear/M31-like), width-16
+# permutation with rate 8, and 4 bytes packed per field element.
+# TODO: set these to Flock's actual field & chosen Poseidon instance
+# (width, rate, and R_F/R_P round numbers drive rows/perm and native cost).
+# ------------------------------------------------------------------
+[poseidon]
+width = 16
+rate = 8                # field elements absorbed per permutation
+bytes_per_elem = 4      # conservative byte packing per element
+
+# ------------------------------------------------------------------
+# Use cases.
+#   prob      : probability weight (need not sum to 1; renormalized)
+#   msg_len   : message length in bytes
+#   num_calls : number of hash invocations in one instance of the use case
+#               (typical: 1, 8, 64, 1024, 32768)
+#   role      : "native" | "circuit" | "both" -- where this cost is paid
+# The entries below are PLACEHOLDERS -- replace with your real set.
+# ------------------------------------------------------------------
+
+[[usecase]]
+name = "single-sig-msg"
+prob = 0.10
+msg_len = 96
+num_calls = 1
+role = "both"
+
+[[usecase]]
+name = "merkle-path-32B"
+prob = 0.30
+msg_len = 64          # 2-to-1 compression of two 32B children
+num_calls = 64
+role = "circuit"
+
+[[usecase]]
+name = "merkle-subtree"
+prob = 0.25
+msg_len = 64
+num_calls = 1024
+role = "circuit"
+
+[[usecase]]
+name = "commitment-layer"
+prob = 0.25
+msg_len = 64
+num_calls = 32768
+role = "both"
+
+[[usecase]]
+name = "bulk-data-4KiB"
+prob = 0.10
+msg_len = 4096
+num_calls = 8
+role = "native"
