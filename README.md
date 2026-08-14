@@ -56,20 +56,28 @@ probability-weighted use-case set.
 
 ## zkVM workloads
 
-`workloads/openvm.toml` encodes the OpenVM v1.5.0 parameters submitted to
-[ethereum/soundcalc](https://github.com/ethereum/soundcalc) and the model in
-its math companion (fri.tex "FRI proof size", `pcs/fri.py`,
-`common/utils.py`): per proof, the prover natively hashes one Merkle tree
-over the LDE domain `D = trace_length/ρ` (leaf = all committed columns at
-that index) plus one sibling-pair tree per FRI fold round plus grinding;
-per proof *verified* inside an aggregation circuit (leaf verifies app,
-internal verifies leaf/internal per the continuations topology), the
-verifier's hashing — t query openings with expected Merkle multi-proof
-deduplication (the eMP formula) plus transcript absorption — must be
-*proven*, and is mapped to trace rows via rows/perm. Prover per-row speed
-is sampled deterministically (seeded) from a configured range to produce
-concrete illustrative times. To benchmark a different zkVM, add a sibling
-workload TOML with its soundcalc parameters and pass it via `--workload`.
+A zkVM spec is **expanded into an ordinary use-case workload** at report
+time: its message lengths, call counts, and probabilities are derived from
+the zkVM's architecture, then scored by the exact same pipeline as a
+hand-written workload. `workloads/openvm.toml` encodes the OpenVM v1.5.0
+parameters submitted to
+[ethereum/soundcalc](https://github.com/ethereum/soundcalc); following the
+model in its math companion (fri.tex "FRI proof size", `pcs/fri.py`,
+`common/utils.py`), each circuit (app/leaf/internal) yields:
+
+- **native use cases** — the prover's Merkle commitment hashing: one tree
+  over the LDE domain `D = trace_length/ρ` (leaf = all committed columns
+  at that index), one sibling-pair tree per FRI fold round, plus grinding;
+- **circuit (proven) use cases** — the verifier hashing re-executed inside
+  the aggregation circuits: t query openings with expected Merkle
+  multi-proof deduplication (the eMP formula) plus transcript absorption;
+
+weighted by how often each proof is produced/verified in one continuation
+run (leaf verifies app; internal levels verify leaf/internal at the
+configured arity until a single root). Prover speed comes from
+`calibration.json`, same as for any workload. To benchmark a different
+zkVM, add a sibling workload TOML with its soundcalc parameters and pass
+it via `--workload`.
 
 ## Workflow / what is real vs. placeholder
 

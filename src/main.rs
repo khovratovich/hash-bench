@@ -51,7 +51,7 @@ fn main() {
             "measure" => measure::run_measure(&Workload::load(&wl_path)?, &cal_path),
             "report" => {
                 if workload_is_zkvm(&wl_path)? {
-                    zkvm::run_zkvm(&wl_path, &cal_path)
+                    zkvm::run_zkvm(&wl_path, &cal_path, &out_path)
                 } else {
                     let (cal, loaded) = Calibration::load_or_placeholder(&cal_path);
                     report::run_report(&Workload::load(&wl_path)?, &cal, loaded, &out_path)

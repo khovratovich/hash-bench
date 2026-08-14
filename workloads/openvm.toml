@@ -1,7 +1,14 @@
 # SAMPLE zkVM WORKLOAD: OpenVM v1.5.0.
 # Run with:  cargo run --release -- report --workload workloads/openvm.toml
-# (the [zkvm] section marks this file as a zkVM spec rather than a use-case
-# workload; add more zkVMs as sibling files with their soundcalc parameters).
+#
+# The [zkvm] section marks this file as a zkVM spec: at report time it is
+# EXPANDED into an ordinary use-case workload -- message lengths, call
+# counts, and weights (probabilities) derived from OpenVM's architecture --
+# and scored by the same pipeline as any hand-written workload. Native use
+# cases are the prover's Merkle commitment + grinding hashing; circuit-role
+# use cases are the verifier hashing proven inside the aggregation circuits,
+# weighted by how often each proof type occurs in one continuation run.
+# Add more zkVMs as sibling files with their soundcalc parameters.
 #
 # Derived from the soundcalc submission:
 #   https://github.com/ethereum/soundcalc/blob/main/soundcalc/zkvms/openvm/openvm.toml
@@ -77,13 +84,9 @@ num_app_segments = 16
 leaf_arity = 1         # app proofs verified per leaf proof
 internal_arity = 3     # child proofs verified per internal proof
 
-# Random sampling of prover speed constants ("concrete running times sampled
-# from a reasonable parameter set"): per-row proving cost and per-byte native
-# hashing live in these ranges; we draw `samples` deterministic samples.
-[sampling]
-seed = 42
-samples = 5
-ns_per_row_range = [200.0, 1000.0]   # amortized proving cost per trace row
+# Prover speed (ns_per_row, setup) comes from calibration.json like for any
+# other workload -- the prover backend is a parameter of the calibration,
+# not of the zkVM spec.
 
 # ---------------------------------------------------------------------------
 # Circuits: values copied verbatim from the soundcalc submission.
