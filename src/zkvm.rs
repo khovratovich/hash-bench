@@ -1,5 +1,6 @@
 //! zkVM benchmark mode: translate a soundcalc-style FRI-STARK submission
-//! (see provers/openvm.toml) into hashing amounts, then into running times.
+//! (a workload TOML with a [zkvm] section, e.g. workloads/openvm.toml)
+//! into hashing amounts, then into running times.
 //!
 //! Model (soundcalc math companion, fri.tex "FRI proof size" + pcs/fri.py):
 //!

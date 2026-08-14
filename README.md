@@ -8,7 +8,7 @@ is a parameter: any system whose circuits are largely repetitive (fixed
 rows per permutation, trace padded to a power of two) fits the model —
 examples include Flock and the FRI-STARK zkVMs submitted to
 [ethereum/soundcalc](https://github.com/ethereum/soundcalc) (OpenVM ships
-as a worked example in `provers/openvm.toml`).
+as a sample workload in `workloads/openvm.toml`).
 
 ## Model
 
@@ -43,16 +43,20 @@ not in a global exchange-rate knob.
 
 ```bash
 cargo run --release -- measure     # fit native atoms on this machine -> calibration.json
-cargo run --release -- report      # markdown report to stdout, raw data -> results.json
-cargo run --release -- zkvm        # soundcalc-derived zkVM benchmark (provers/openvm.toml)
+cargo run --release -- report      # use-case workload -> markdown report + results.json
+cargo run --release -- report --workload workloads/openvm.toml   # OpenVM sample workload
 ```
 
 Flags: `--workload workloads/default.toml`, `--calibration calibration.json`,
-`--out results.json`, `--zkvm provers/openvm.toml`.
+`--out results.json`.
 
-## zkVM mode
+`report` dispatches on the workload file's contents: a file with a
+top-level `[zkvm]` section is treated as a zkVM spec, anything else as a
+probability-weighted use-case set.
 
-`provers/openvm.toml` encodes the OpenVM v1.5.0 parameters submitted to
+## zkVM workloads
+
+`workloads/openvm.toml` encodes the OpenVM v1.5.0 parameters submitted to
 [ethereum/soundcalc](https://github.com/ethereum/soundcalc) and the model in
 its math companion (fri.tex "FRI proof size", `pcs/fri.py`,
 `common/utils.py`): per proof, the prover natively hashes one Merkle tree
@@ -64,8 +68,8 @@ verifier's hashing — t query openings with expected Merkle multi-proof
 deduplication (the eMP formula) plus transcript absorption — must be
 *proven*, and is mapped to trace rows via rows/perm. Prover per-row speed
 is sampled deterministically (seeded) from a configured range to produce
-concrete illustrative times. To benchmark a different zkVM, write another
-TOML with its soundcalc parameters and pass `--zkvm`.
+concrete illustrative times. To benchmark a different zkVM, add a sibling
+workload TOML with its soundcalc parameters and pass it via `--workload`.
 
 ## Workflow / what is real vs. placeholder
 

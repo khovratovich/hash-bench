@@ -1,4 +1,9 @@
-# OpenVM v1.5.0 prover spec, derived from the soundcalc submission:
+# SAMPLE zkVM WORKLOAD: OpenVM v1.5.0.
+# Run with:  cargo run --release -- report --workload workloads/openvm.toml
+# (the [zkvm] section marks this file as a zkVM spec rather than a use-case
+# workload; add more zkVMs as sibling files with their soundcalc parameters).
+#
+# Derived from the soundcalc submission:
 #   https://github.com/ethereum/soundcalc/blob/main/soundcalc/zkvms/openvm/openvm.toml
 # Hashing-count model follows soundcalc's math companion (fri.tex: "FRI proof
 # size") and pcs/fri.py:get_FRI_proof_size_bits():

@@ -5,7 +5,10 @@
 //! Commands:
 //!   hash-bench report  [--workload path] [--calibration path] [--out path]
 //!   hash-bench measure [--workload path] [--calibration path]
-//!   hash-bench zkvm    [--zkvm path] [--calibration path]
+//!
+//! A workload TOML is either a probability-weighted use-case set
+//! (workloads/default.toml) or a zkVM spec with a [zkvm] section
+//! (workloads/openvm.toml); `report` dispatches on the file's contents.
 
 mod backends;
 mod calibration;
@@ -27,6 +30,15 @@ fn arg_value(args: &[String], flag: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+/// A workload file with a top-level [zkvm] section is a zkVM spec;
+/// otherwise it is a use-case workload.
+fn workload_is_zkvm(path: &str) -> Result<bool, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let value: toml::Value =
+        toml::from_str(&text).map_err(|e| format!("cannot parse {path}: {e}"))?;
+    Ok(value.get("zkvm").is_some())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("report");
@@ -34,17 +46,18 @@ fn main() {
     let cal_path = arg_value(&args, "--calibration", "calibration.json");
     let out_path = arg_value(&args, "--out", "results.json");
 
-    let zkvm_path = arg_value(&args, "--zkvm", "provers/openvm.toml");
-
     let result = (|| -> Result<(), String> {
         match cmd {
-            "zkvm" => zkvm::run_zkvm(&zkvm_path, &cal_path),
             "measure" => measure::run_measure(&Workload::load(&wl_path)?, &cal_path),
             "report" => {
-                let (cal, loaded) = Calibration::load_or_placeholder(&cal_path);
-                report::run_report(&Workload::load(&wl_path)?, &cal, loaded, &out_path)
+                if workload_is_zkvm(&wl_path)? {
+                    zkvm::run_zkvm(&wl_path, &cal_path)
+                } else {
+                    let (cal, loaded) = Calibration::load_or_placeholder(&cal_path);
+                    report::run_report(&Workload::load(&wl_path)?, &cal, loaded, &out_path)
+                }
             }
-            other => Err(format!("unknown command '{other}' (use: report | measure | zkvm)")),
+            other => Err(format!("unknown command '{other}' (use: report | measure)")),
         }
     })();
 
