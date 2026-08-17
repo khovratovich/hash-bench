@@ -13,6 +13,19 @@ sha2 = "0.10"
 sha3 = "0.10"
 blake3 = "1"
 
+# Poseidon (v1) reference implementation: the Poseidon2 paper's own code
+# (HorizenLabs/poseidon2, crate `zkhash`), which ships the BabyBear t=16
+# instance our [poseidon] config describes. OPTIONAL because it drags in a
+# large dependency tree (halo2/pasta/jubjub for its other primitives) that
+# would slow every build and can break on newer toolchains. Enable with:
+#   cargo run --release --features poseidon-native -- measure
+zkhash = { git = "https://github.com/HorizenLabs/poseidon2", optional = true }
+ark-ff = { version = "^0.4.0", default-features = false, optional = true }
+
+[features]
+default = []
+poseidon-native = ["zkhash", "ark-ff"]
+
 [profile.release]
 lto = true
 codegen-units = 1

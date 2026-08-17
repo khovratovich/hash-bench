@@ -39,6 +39,15 @@ pub fn run_report(wl: &Workload, cal: &Calibration, cal_loaded: bool, out_json: 
             }
         }
     }
+    // Provenance for atoms that ARE measured but carry a caveat (e.g. measured
+    // against a reference implementation whose maturity differs from the other
+    // candidates') -- the note must travel with the number, not just with
+    // unmeasured placeholders.
+    for &h in ALL_HASHES.iter().filter(|h| cal.native[h].measured) {
+        if let Some(src) = &cal.native[&h].source {
+            println!("> **note:** {} native atom ({:.0} ns/perm): {}\n", h.name(), cal.native[&h].c1_ns, src);
+        }
+    }
     if !cal.prover.measured {
         println!("> **warning:** prover model '{}' (setup_ns, ns_per_row) and circuit rows/perm are placeholders -- calibrate against real prover traces before trusting circuit-side numbers.\n", cal.prover.name);
     }

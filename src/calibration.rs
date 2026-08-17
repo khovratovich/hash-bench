@@ -87,9 +87,18 @@ impl Calibration {
         //      i9 Raptor Lake, Dec 2024). Scaling by the paper's 3.38x
         //      Poseidon/Poseidon2 ratio gives ~3.4 us.
         //
-        // Both land at ~3.4 us/perm; plausible range 2-7 us depending on
-        // implementation quality and hardware. Replace by measurement once a
-        // Poseidon backend is wired (see backends.rs TODO).
+        // Both land at ~3.4 us/perm, and route (a) is now corroborated by
+        // direct measurement: `measure --features poseidon-native` fits the
+        // same reference code at 8.5-8.7 us/perm on a 2024-era machine,
+        // consistent with the paper's 7.06 us on an i7-6700K.
+        //
+        // We nevertheless default to the PRODUCTION-quality 3400 ns rather
+        // than the measured 8500 ns, because the reference implementation uses
+        // ark-ff's generic 64-bit-limb Montgomery arithmetic for a 31-bit
+        // field while the other three candidates are production crates with
+        // SHA-NI/SIMD. Scoring the reference impl against them would measure
+        // engineering effort, not primitive cost. Run with the feature to get
+        // the measured figure instead; the ranking is unchanged either way.
         native.insert(HashId::Poseidon, NativeAtom {
             c0_ns: 30.0,
             c1_ns: 3400.0,

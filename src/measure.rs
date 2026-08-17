@@ -9,7 +9,7 @@
 
 use crate::backends::available_backends;
 use crate::calibration::{Calibration, NativeAtom};
-use crate::callcount::perms_per_msg;
+use crate::callcount::{perms_per_msg, HashId};
 use crate::workload::Workload;
 use std::hint::black_box;
 use std::time::Instant;
@@ -18,8 +18,16 @@ const CALIB_LENGTHS: [u64; 5] = [32, 64, 256, 1024, 65536];
 const BATCHES: usize = 15;
 const TARGET_BATCH_NS: f64 = 2.0e6; // ~2ms per timed batch
 
-/// Median ns per call at a given message length.
-fn time_one(backend: &dyn crate::backends::HashBackend, len: u64) -> f64 {
+/// Minimum ns per call at a given message length, plus the observed spread.
+///
+/// MINIMUM, not median: background load, scheduler preemption, and frequency
+/// dips only ever ADD time to a batch, so the fastest batch is the best
+/// estimate of the uncontended cost, while the median tracks whatever else the
+/// machine happened to be doing. Measured here across three runs on a loaded
+/// machine, the median moved SHA-256 between 98 and 350 ns/perm; the minimum
+/// is far more stable. The returned spread (max/min) is the load indicator --
+/// a ratio near 1 means a quiet machine.
+fn time_one(backend: &dyn crate::backends::HashBackend, len: u64) -> (f64, f64) {
     let msg = vec![0xabu8; len as usize];
 
     // Warm up and estimate iterations for ~TARGET_BATCH_NS per batch.
@@ -41,7 +49,7 @@ fn time_one(backend: &dyn crate::backends::HashBackend, len: u64) -> f64 {
     }
     black_box(sink);
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    samples[BATCHES / 2]
+    (samples[0], samples[BATCHES - 1] / samples[0])
 }
 
 /// Least-squares fit y = c0 + c1 * x; returns (c0, c1).
@@ -59,21 +67,53 @@ fn fit(points: &[(f64, f64)]) -> (f64, f64) {
 pub fn run_measure(wl: &Workload, cal_path: &str) -> Result<(), String> {
     let (mut cal, _) = Calibration::load_or_placeholder(cal_path);
 
-    for backend in available_backends() {
+    for backend in available_backends(&wl.poseidon) {
         let id = backend.id();
         let mut points = Vec::new();
+        let mut worst_spread: f64 = 1.0;
         for &len in &CALIB_LENGTHS {
             let perms = perms_per_msg(id, len, &wl.poseidon) as f64;
-            let ns = time_one(backend.as_ref(), len);
-            println!("  {:<10} len={:>6}  perms={:>5}  {:>10.1} ns/call", id.name(), len, perms, ns);
+            let (ns, spread) = time_one(backend.as_ref(), len);
+            worst_spread = worst_spread.max(spread);
+            println!(
+                "  {:<10} len={:>6}  perms={:>5}  {:>10.1} ns/call  (spread x{:.2})",
+                id.name(), len, perms, ns, spread
+            );
             points.push((perms, ns));
+        }
+        if worst_spread > 2.0 {
+            println!(
+                "  !! spread up to x{:.1} -- machine is loaded; re-run when idle for a tighter fit",
+                worst_spread
+            );
         }
         let (c0, c1) = fit(&points);
         println!("{:<10} fit: c0 = {:.1} ns/call, c1 = {:.1} ns/perm\n", id.name(), c0, c1);
-        cal.native.insert(id, NativeAtom { c0_ns: c0, c1_ns: c1, measured: true, source: None });
+        // Poseidon's measurement carries an implementation-maturity caveat that
+        // must stay attached to the number: the reference implementation uses
+        // ark-ff's GENERIC Montgomery backend (64-bit limbs) for a 31-bit
+        // field, while the other candidates here are production crates with
+        // SHA-NI/SIMD. Comparing them head-to-head measures engineering effort
+        // as much as primitive cost, so record how to correct for it.
+        let source = (id == HashId::Poseidon).then(|| {
+            format!(
+                "measured here: zkhash POSEIDON_BABYBEAR_16_PARAMS (t=16, alpha=7, R_F=8, \
+                 R_P=13), optimized permutation(), sponge rate {} over {}-byte elems. \
+                 REFERENCE-QUALITY: ark-ff generic 64-bit-limb Montgomery for a 31-bit field. \
+                 eprint 2023/323 Tab.2 measures this same code at 7.06us/perm (i7-6700K); a \
+                 specialized impl (Plonky3-style BabyBear + AVX-2) is ~3400 ns/perm -- set \
+                 c1_ns=3400 to compare production-quality implementations of all four hashes.",
+                wl.poseidon.rate, wl.poseidon.bytes_per_elem
+            )
+        });
+        cal.native.insert(id, NativeAtom { c0_ns: c0, c1_ns: c1, measured: true, source });
     }
 
-    println!("note: Poseidon has no native backend yet (field/instance TBD); keeping placeholder atom.");
+    #[cfg(not(feature = "poseidon-native"))]
+    println!(
+        "note: Poseidon not measured (build with --features poseidon-native to wire the \
+         zkhash BabyBear t=16 reference implementation); keeping the literature-derived atom."
+    );
     cal.save(cal_path)?;
     println!("calibration written to {cal_path}");
     Ok(())

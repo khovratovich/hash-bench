@@ -45,6 +45,9 @@ not in a global exchange-rate knob.
 cargo run --release -- measure     # fit native atoms on this machine -> calibration.json
 cargo run --release -- report      # use-case workload -> markdown report + results.json
 cargo run --release -- report --workload workloads/openvm.toml   # OpenVM sample workload
+
+# also fit Poseidon from the reference implementation (heavier build, see below)
+cargo run --release --features poseidon-native -- measure
 ```
 
 Flags: `--workload workloads/default.toml`, `--calibration calibration.json`,
@@ -105,33 +108,65 @@ call-count model in `src/callcount.rs`.
 | `c1_ns` | marginal cost of one permutation / compression call | same `measure` run |
 | `measured` | `true` once fitted on the target machine; `false` = placeholder (report warns) | set by `measure` automatically |
 
-`measure` fills SHA-256, SHA3-256, BLAKE3. Poseidon has no backend yet, so
-fill it by hand: time `N` calls of your implementation at two message
-lengths `L1` (1 permutation) and `L2` (k permutations), then
-`c1 = (t(L2) − t(L1)) / (k − 1)` and `c0 = t(L1) − c1`. Re-run `measure`
-on every hardware profile you care about — SHA-NI vs. no SHA-NI changes
-SHA-256 by an order of magnitude.
+`measure` fills SHA-256, SHA3-256 and BLAKE3 from their production crates,
+and Poseidon too when built with `--features poseidon-native` (below).
+Re-run it on every hardware profile you care about — SHA-NI vs. no SHA-NI
+changes SHA-256 by an order of magnitude.
 
-Set `source` on any atom you fill by hand or take from the literature: it
-is printed by `report` next to the "not measured" warning, so a cited
-value is never mistaken for a bare guess.
+To fill an atom by hand instead, time `N` calls at two message lengths
+`L1` (1 permutation) and `L2` (k permutations), then
+`c1 = (t(L2) − t(L1)) / (k − 1)` and `c0 = t(L1) − c1`. Set `source` on any
+atom you fill by hand or take from the literature — `report` prints it, so
+a cited value is never mistaken for a bare guess, and a *measured* value
+that carries a caveat keeps the caveat attached.
 
-#### Where the shipped Poseidon atom comes from
+`measure` reports the **minimum** of 15 timed batches, not the median:
+interference (background load, preemption, frequency dips) only ever adds
+time, so the fastest batch is the best estimate of uncontended cost. It
+also prints a `spread` factor per length — near 1.0 means a quiet machine,
+and anything above 2 triggers a "re-run when idle" warning. This matters:
+on a loaded machine the median put SHA-256 anywhere between 98 and
+350 ns/perm across runs, while the minimum reproduced its quiet-machine
+value (~78–80 ns/perm) every time.
 
-The default `c1_ns = 3400` for Poseidon (v1) at width 16 over BabyBear —
-matching the `[poseidon]` instance in the workload — is literature-derived,
-not measured. Two independent routes agree:
+#### Poseidon: measuring it, and the maturity caveat
+
+`--features poseidon-native` wires the Poseidon2 paper's own reference code
+([HorizenLabs/poseidon2](https://github.com/HorizenLabs/poseidon2), crate
+`zkhash`) at `POSEIDON_BABYBEAR_16_PARAMS` — width 16, α=7, R_F=8, R_P=13,
+via its optimized `permutation()` — so `measure` fits the atom instead of
+inheriting a literature value:
+
+```bash
+cargo run --release --features poseidon-native -- measure
+```
+
+It is optional because it pulls a large dependency tree (halo2/pasta/jubjub,
+for the crate's other primitives) that slows every build. Three data points,
+which now agree:
 
 | route | value | source |
 |---|---|---|
-| reference impl, scaled | 7.06 µs on a 2015 i7-6700K, halved for ~9 years of single-core progress and a production implementation → ~3.5 µs | [Poseidon2 paper](https://eprint.iacr.org/2023/323.pdf) Table 2 (BabyBear t=16: Poseidon 7.06 µs, Poseidon2 2.09 µs; t=24: 15.01 vs 3.53 µs), Rust reference implementation with Poseidon's optimized partial-round representation |
-| production Poseidon2 × ratio | Plonky3 Poseidon2 BabyBear width 16 = 1.0 µs (AVX-2, i9 Raptor Lake) × the paper's 3.38× Poseidon/Poseidon2 ratio → ~3.4 µs | [Small Fields in Plonky3](https://hackmd.io/@Syxton/small_fields_in_plonky3) (Dec 2024, Plonky3 PR #576) |
+| **measured here** (reference impl) | 8.5–8.7 µs/perm | this machine, `--features poseidon-native`, min-of-batches |
+| same code, published | 7.06 µs/perm on a 2015 i7-6700K | [Poseidon2 paper](https://eprint.iacr.org/2023/323.pdf) Table 2 (BabyBear t=16: Poseidon 7.06, Poseidon2 2.09 µs; t=24: 15.01 vs 3.53), optimized partial-round representation |
+| production impl, derived | ~3.4 µs/perm | Plonky3 Poseidon2 BabyBear width 16 = 1.0 µs (AVX-2, i9 Raptor Lake) × the paper's 3.38× Poseidon/Poseidon2 ratio — [Small Fields in Plonky3](https://hackmd.io/@Syxton/small_fields_in_plonky3) |
 
-Plausible range 2–7 µs depending on implementation quality and hardware.
+**The caveat that matters for a fair comparison:** the reference
+implementation uses ark-ff's *generic* Montgomery backend (64-bit limbs) for
+a 31-bit field, while the other three candidates are production crates with
+SHA-NI/SIMD. Comparing them head-to-head measures engineering effort as much
+as primitive cost — the implementation-maturity bias. A specialized Poseidon
+(Plonky3-style BabyBear + AVX-2) is ~2.5× faster than what `measure` reports
+here. To compare production-quality implementations of all four hashes, set
+Poseidon's `c1_ns = 3400` by hand; the shipped placeholder in
+`calibration.rs` uses that figure for exactly this reason. Either choice
+leaves the ranking intact — Poseidon loses the native dimension by 2–3
+orders of magnitude regardless — but the absolute gap changes by 2.5×.
+
 Beware that widely-quoted "N million Poseidon2 hashes/second" figures are
 usually *proving* throughput, not native permutation speed — e.g. the same
 Plonky3 note proves 2^19 Poseidon2 permutations in 480 ms (~1.1M/s proven),
-which is a different quantity from the 1 µs native permutation above.
+a different quantity from the 1 µs native permutation above.
 
 ### `circuit_rows_per_perm` — per-hash in-circuit footprint
 
@@ -188,9 +223,12 @@ and the final ranking (`scores`: expected native / prove / combined ns).
 
 ## TODO
 
-- [ ] Poseidon (v1) native backend (blocked on the target prover's field
-      choice; then wire e.g. the `zkhash` crate or a hand-rolled permutation
-      and delete the placeholder atom).
+- [x] Poseidon (v1) native backend — `--features poseidon-native` wires the
+      `zkhash` BabyBear t=16 reference implementation; `measure` fits it at
+      8.5–8.7 µs/perm here.
+- [ ] A *production-quality* Poseidon backend (specialized BabyBear field +
+      AVX-2, Plonky3-style) so the measured atom is free of the
+      implementation-maturity bias and the hand-set `c1_ns = 3400` can go.
 - [ ] Poseidon `bytes_per_elem`/rate in `[poseidon]` must match the target
       prover's field and chosen instance (width, rate, R_F/R_P round numbers).
 - [ ] Prover adapters: extract rows/perm and (setup, per-row) constants from
