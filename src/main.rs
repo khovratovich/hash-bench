@@ -49,6 +49,7 @@ fn main() {
     let result = (|| -> Result<(), String> {
         match cmd {
             "measure" => measure::run_measure(&Workload::load(&wl_path)?, &cal_path),
+            "sweep" => measure::run_sweep(&Workload::load(&wl_path)?),
             "report" => {
                 if workload_is_zkvm(&wl_path)? {
                     zkvm::run_zkvm(&wl_path, &cal_path, &out_path)
@@ -57,7 +58,7 @@ fn main() {
                     report::run_report(&Workload::load(&wl_path)?, &cal, loaded, &out_path)
                 }
             }
-            other => Err(format!("unknown command '{other}' (use: report | measure)")),
+            other => Err(format!("unknown command '{other}' (use: report | measure | sweep)")),
         }
     })();
 

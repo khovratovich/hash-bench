@@ -46,9 +46,27 @@ cargo run --release -- measure     # fit native atoms on this machine -> calibra
 cargo run --release -- report      # use-case workload -> markdown report + results.json
 cargo run --release -- report --workload workloads/openvm.toml   # OpenVM sample workload
 
+cargo run --release -- sweep       # per-length native detail behind the fit
+                                   # (ns/call, ns/perm, bytes/perm, MB/s, spread)
+
 # also fit Poseidon from the reference implementation (heavier build, see below)
 cargo run --release --features poseidon-native -- measure
 ```
+
+**Run timing commands pinned to one core at high priority.** Min-of-batches
+survives brief interference but not sustained load: on a machine with a
+video call and a browser running, an unpinned `sweep` reported SHA-256 at
+507 µs for a 64 KiB message versus 83 µs pinned — a 6× error, with spread
+factors up to ×166. Pinned, the same points reproduce the fitted atoms to
+within a few percent. On Windows:
+
+```powershell
+$p = Start-Process -PassThru -NoNewWindow -FilePath .\target\release\hash-bench.exe -ArgumentList sweep -RedirectStandardOutput sweep.txt
+$p.PriorityClass = 'High'; $p.ProcessorAffinity = [IntPtr]4
+```
+
+On Linux: `nice -n -5 taskset -c 2 ./target/release/hash-bench sweep`.
+Watch the `spread` column — near ×1.0 means the numbers are trustworthy.
 
 Flags: `--workload workloads/default.toml`, `--calibration calibration.json`,
 `--out results.json`.

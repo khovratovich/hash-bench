@@ -2,10 +2,14 @@
 //! by timing real implementations at several message lengths and doing a
 //! least-squares fit over (perms, ns/call) points.
 //!
-//! Deliberately simple (median-of-batches, no criterion dependency): the atoms
-//! feed a coarse analytic model, so ~5% timer noise is irrelevant next to the
-//! placeholder uncertainty on the circuit side. Pin CPU frequency for best
-//! results.
+//! Deliberately simple (min-of-batches, no criterion dependency): the atoms
+//! feed a coarse analytic model, so a few percent of timer noise is irrelevant
+//! next to the placeholder uncertainty on the circuit side. Pin CPU frequency
+//! for best results.
+//!
+//! `sweep` reuses the same timing core over a finer length grid and reports
+//! per-length detail (ns/call, ns/perm, throughput, factor vs the fastest
+//! candidate) instead of collapsing everything into a two-parameter fit.
 
 use crate::backends::available_backends;
 use crate::calibration::{Calibration, NativeAtom};
@@ -15,6 +19,9 @@ use std::hint::black_box;
 use std::time::Instant;
 
 const CALIB_LENGTHS: [u64; 5] = [32, 64, 256, 1024, 65536];
+/// Finer grid for `sweep`: straddles SHA-256's 64 B block, SHA3's 136 B rate,
+/// and BLAKE3's 1024 B chunk boundary so mode effects are visible.
+const SWEEP_LENGTHS: [u64; 10] = [32, 64, 128, 136, 256, 512, 1024, 2048, 16384, 65536];
 const BATCHES: usize = 15;
 const TARGET_BATCH_NS: f64 = 2.0e6; // ~2ms per timed batch
 
@@ -62,6 +69,75 @@ fn fit(points: &[(f64, f64)]) -> (f64, f64) {
     let c1 = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     let c0 = (sy - c1 * sx) / n;
     (c0.max(0.0), c1.max(0.0))
+}
+
+/// Per-length native detail for every available backend: the raw data behind
+/// the two-parameter fit. Prints ns/call, the implied ns/perm, throughput, and
+/// each candidate's factor versus the fastest candidate at that length --
+/// showing where mode effects (padding boundaries, SIMD batching) make the
+/// linear model leak, which a single (c0, c1) pair cannot express.
+pub fn run_sweep(wl: &Workload) -> Result<(), String> {
+    let backends = available_backends(&wl.poseidon);
+
+    // rows[hash_index][length_index] = (perms, ns_per_call, spread)
+    let mut rows: Vec<(HashId, Vec<(u64, f64, f64)>)> = Vec::new();
+    for backend in &backends {
+        let id = backend.id();
+        let mut per_len = Vec::new();
+        for &len in &SWEEP_LENGTHS {
+            let perms = perms_per_msg(id, len, &wl.poseidon);
+            let (ns, spread) = time_one(backend.as_ref(), len);
+            per_len.push((perms, ns, spread));
+        }
+        rows.push((id, per_len));
+    }
+
+    println!("# Native sweep (min of {BATCHES} batches per point)\n");
+    for (id, per_len) in &rows {
+        println!("## {}\n", id.name());
+        println!("| bytes | perms/msg | ns/call | ns/perm | bytes/perm | MB/s | spread |");
+        println!("|---|---|---|---|---|---|---|");
+        for (i, &(perms, ns, spread)) in per_len.iter().enumerate() {
+            let len = SWEEP_LENGTHS[i];
+            println!(
+                "| {} | {} | {:.1} | {:.1} | {:.1} | {:.0} | x{:.2} |",
+                len,
+                perms,
+                ns,
+                ns / perms as f64,
+                len as f64 / perms as f64,
+                len as f64 / ns * 1000.0, // bytes/ns -> MB/s
+                spread,
+            );
+        }
+        println!();
+    }
+
+    // Relative table: factor vs the fastest candidate at each length.
+    println!("## Factor vs fastest at each length\n");
+    print!("| bytes |");
+    for (id, _) in &rows {
+        print!(" {} |", id.name());
+    }
+    println!("\n|---|{}", "---|".repeat(rows.len()));
+    for (i, &len) in SWEEP_LENGTHS.iter().enumerate() {
+        let best = rows
+            .iter()
+            .map(|(_, pl)| pl[i].1)
+            .fold(f64::INFINITY, f64::min);
+        print!("| {} |", len);
+        for (_, pl) in &rows {
+            let f = pl[i].1 / best;
+            if f <= 1.0001 {
+                print!(" **1.00** |");
+            } else {
+                print!(" {:.2} |", f);
+            }
+        }
+        println!();
+    }
+    println!("\n(fastest candidate at each length in bold; higher = slower)");
+    Ok(())
 }
 
 pub fn run_measure(wl: &Workload, cal_path: &str) -> Result<(), String> {
