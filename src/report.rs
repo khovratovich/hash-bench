@@ -31,7 +31,13 @@ pub fn run_report(wl: &Workload, cal: &Calibration, cal_loaded: bool, out_json: 
     if !cal_loaded {
         println!("> **warning:** no calibration.json found -- ALL atoms are placeholders. Run `hash-bench measure` first.\n");
     } else if !unmeasured_native.is_empty() {
-        println!("> **warning:** placeholder native atoms for: {}.\n", unmeasured_native.join(", "));
+        println!("> **warning:** native atoms not measured on this machine for: {}.\n", unmeasured_native.join(", "));
+        for &h in ALL_HASHES.iter().filter(|h| !cal.native[h].measured) {
+            match &cal.native[&h].source {
+                Some(src) => println!(">   - {} ({:.0} ns/perm) {}\n", h.name(), cal.native[&h].c1_ns, src),
+                None => println!(">   - {} ({:.0} ns/perm) bare placeholder, no source\n", h.name(), cal.native[&h].c1_ns),
+            }
+        }
     }
     if !cal.prover.measured {
         println!("> **warning:** prover model '{}' (setup_ns, ns_per_row) and circuit rows/perm are placeholders -- calibrate against real prover traces before trusting circuit-side numbers.\n", cal.prover.name);

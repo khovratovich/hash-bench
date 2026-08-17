@@ -112,6 +112,27 @@ lengths `L1` (1 permutation) and `L2` (k permutations), then
 on every hardware profile you care about — SHA-NI vs. no SHA-NI changes
 SHA-256 by an order of magnitude.
 
+Set `source` on any atom you fill by hand or take from the literature: it
+is printed by `report` next to the "not measured" warning, so a cited
+value is never mistaken for a bare guess.
+
+#### Where the shipped Poseidon atom comes from
+
+The default `c1_ns = 3400` for Poseidon (v1) at width 16 over BabyBear —
+matching the `[poseidon]` instance in the workload — is literature-derived,
+not measured. Two independent routes agree:
+
+| route | value | source |
+|---|---|---|
+| reference impl, scaled | 7.06 µs on a 2015 i7-6700K, halved for ~9 years of single-core progress and a production implementation → ~3.5 µs | [Poseidon2 paper](https://eprint.iacr.org/2023/323.pdf) Table 2 (BabyBear t=16: Poseidon 7.06 µs, Poseidon2 2.09 µs; t=24: 15.01 vs 3.53 µs), Rust reference implementation with Poseidon's optimized partial-round representation |
+| production Poseidon2 × ratio | Plonky3 Poseidon2 BabyBear width 16 = 1.0 µs (AVX-2, i9 Raptor Lake) × the paper's 3.38× Poseidon/Poseidon2 ratio → ~3.4 µs | [Small Fields in Plonky3](https://hackmd.io/@Syxton/small_fields_in_plonky3) (Dec 2024, Plonky3 PR #576) |
+
+Plausible range 2–7 µs depending on implementation quality and hardware.
+Beware that widely-quoted "N million Poseidon2 hashes/second" figures are
+usually *proving* throughput, not native permutation speed — e.g. the same
+Plonky3 note proves 2^19 Poseidon2 permutations in 480 ms (~1.1M/s proven),
+which is a different quantity from the 1 µs native permutation above.
+
 ### `circuit_rows_per_perm` — per-hash in-circuit footprint
 
 Integer: how many trace rows one permutation of that hash occupies in your

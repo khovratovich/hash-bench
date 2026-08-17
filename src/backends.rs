@@ -39,10 +39,13 @@ impl HashBackend for Blake3Backend {
     }
 }
 
-// TODO(poseidon): wire a real Poseidon (v1) implementation once Flock's field
-// and instance (width, rate, R_F/R_P) are fixed (e.g. the zkhash crate, or a
-// hand-rolled permutation). Until then Poseidon keeps its placeholder native
-// atom and `measure` skips it with a warning.
+// TODO(poseidon): wire a real Poseidon (v1) implementation once the target
+// prover's field and instance (width, rate, R_F/R_P) are fixed -- the
+// HorizenLabs/poseidon2 crate (the Poseidon2 paper's reference code, which
+// also implements Poseidon v1 over BabyBear/Goldilocks/BLS12) is the direct
+// route, since the shipped atom is derived from its published numbers.
+// Until then Poseidon's atom is literature-derived (see calibration.rs:
+// ~3400 ns/perm for BabyBear t=16) and `measure` skips it with a warning.
 
 pub fn available_backends() -> Vec<Box<dyn HashBackend>> {
     vec![

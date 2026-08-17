@@ -70,7 +70,7 @@ pub fn run_measure(wl: &Workload, cal_path: &str) -> Result<(), String> {
         }
         let (c0, c1) = fit(&points);
         println!("{:<10} fit: c0 = {:.1} ns/call, c1 = {:.1} ns/perm\n", id.name(), c0, c1);
-        cal.native.insert(id, NativeAtom { c0_ns: c0, c1_ns: c1, measured: true });
+        cal.native.insert(id, NativeAtom { c0_ns: c0, c1_ns: c1, measured: true, source: None });
     }
 
     println!("note: Poseidon has no native backend yet (field/instance TBD); keeping placeholder atom.");

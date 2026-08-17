@@ -52,7 +52,7 @@ pub fn usecase_cost(
     let total_perms = perms * uc.num_calls;
 
     let native_ns = uc.role.native().then(|| {
-        let a = cal.native[&hash];
+        let a = &cal.native[&hash];
         uc.num_calls as f64 * (a.c0_ns + a.c1_ns * perms as f64)
     });
 

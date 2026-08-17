@@ -3,7 +3,12 @@
     "sha256":   { "c0_ns": 120.0, "c1_ns": 78.0,   "measured": true },
     "sha3-256": { "c0_ns": 26.0,  "c1_ns": 368.0,  "measured": true },
     "blake3":   { "c0_ns": 335.0, "c1_ns": 17.0,   "measured": true },
-    "poseidon": { "c0_ns": 30.0,  "c1_ns": 2000.0, "measured": false }
+    "poseidon": {
+      "c0_ns": 30.0,
+      "c1_ns": 3400.0,
+      "measured": false,
+      "source": "derived: eprint 2023/323 Tab.2 (Poseidon BabyBear t=16 = 7.06us, i7-6700K) cross-checked against Plonky3 Poseidon2 BabyBear w16 = 1.0us (AVX-2) x 3.38 ratio"
+    }
   },
   "circuit_rows_per_perm": {
     "sha256": 128,
